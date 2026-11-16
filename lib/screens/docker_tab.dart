@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 
-import '../widgets/cards.dart';
+import '../theme.dart';
 import '../widgets/container_card.dart';
+import '../widgets/glass_card.dart';
 
-/// The "Docker" tab: the list of containers.
+/// The Docker tab: the list of containers.
 class DockerTab extends StatelessWidget {
   final List<dynamic>? containers;
   final String? error;
   final Set<String> working;
-  final bool canAct;
+  final bool canControl;
   final Future<void> Function() onRefresh;
   final void Function(String name) onDetails;
   final void Function(int port) onOpen;
@@ -19,7 +20,7 @@ class DockerTab extends StatelessWidget {
     required this.containers,
     required this.error,
     required this.working,
-    required this.canAct,
+    required this.canControl,
     required this.onRefresh,
     required this.onDetails,
     required this.onOpen,
@@ -39,18 +40,38 @@ class DockerTab extends StatelessWidget {
             : const CircularProgressIndicator(),
       );
     }
+    final running = list.where((c) => (c as Map)['state'] == 'running').length;
     return RefreshIndicator(
       onRefresh: onRefresh,
       child: ListView(
-        padding: const EdgeInsets.all(12),
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
         children: [
-          ErrorText(error),
-          if (list.isEmpty) const Text('No containers found'),
+          ErrorNote(error),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
+            child: Row(
+              children: [
+                StatusPill('$running running', AppColors.good, icon: Icons.play_circle_rounded),
+                const SizedBox(width: 8),
+                StatusPill(
+                  '${list.length - running} stopped',
+                  list.length - running > 0 ? AppColors.bad : AppColors.muted,
+                  icon: Icons.stop_circle_rounded,
+                ),
+              ],
+            ),
+          ),
+          if (list.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: Text('No containers found')),
+            ),
           for (final c in list)
             ContainerCard(
               container: Map<String, dynamic>.from(c as Map),
               working: working.contains((c as Map)['name']),
-              canAct: canAct,
+              canControl: canControl,
               onDetails: onDetails,
               onOpen: onOpen,
               onAction: onAction,

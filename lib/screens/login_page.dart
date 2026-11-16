@@ -1,18 +1,25 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/api.dart';
+import '../services/session_store.dart';
+import '../theme.dart';
 
-/// The login screen. The address, username and "home address" are remembered
-/// on the phone; the password never is.
+/// The login screen. "Remember me" keeps you logged in on this phone.
 class LoginPage extends StatefulWidget {
   final Api api;
+  final SessionStore store;
+  final String initialUrl;
+  final String initialUser;
   final String? notice;
   final VoidCallback onLoggedIn;
+
   const LoginPage({
     super.key,
     required this.api,
+    required this.store,
     required this.onLoggedIn,
+    this.initialUrl = '',
+    this.initialUser = '',
     this.notice,
   });
 
@@ -21,41 +28,26 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final _url = TextEditingController();
-  final _user = TextEditingController();
-  final _pass = TextEditingController();
-  final _home = TextEditingController();
+  late final TextEditingController _url = TextEditingController(text: widget.initialUrl);
+  late final TextEditingController _user = TextEditingController(text: widget.initialUser);
+  final TextEditingController _pass = TextEditingController();
   bool _hidePass = true;
+  bool _remember = true;
   bool _loading = false;
   String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSaved();
-  }
 
   @override
   void dispose() {
     _url.dispose();
     _user.dispose();
     _pass.dispose();
-    _home.dispose();
     super.dispose();
   }
 
-  Future<void> _loadSaved() async {
-    try {
-      final p = await SharedPreferences.getInstance();
-      if (!mounted) return;
-      _url.text = p.getString('server_url') ?? '';
-      _user.text = p.getString('username') ?? '';
-      _home.text = p.getString('home_host') ?? '';
-    } catch (_) {}
-  }
-
   Future<void> _login() async {
-    if (_url.text.trim().isEmpty || _user.text.trim().isEmpty || _pass.text.isEmpty) {
+    final url = _url.text.trim();
+    final user = _user.text.trim();
+    if (url.isEmpty || user.isEmpty || _pass.text.isEmpty) {
       setState(() => _error = 'Fill in address, username and password');
       return;
     }
@@ -64,17 +56,12 @@ class _LoginPageState extends State<LoginPage> {
       _error = null;
     });
     try {
-      await widget.api.login(_url.text, _user.text.trim(), _pass.text);
-      final host = _home.text.trim().isNotEmpty
-          ? _home.text.trim()
-          : (Uri.tryParse(widget.api.base)?.host ?? '');
-      widget.api.openHost = host;
-      try {
-        final p = await SharedPreferences.getInstance();
-        await p.setString('server_url', _url.text.trim());
-        await p.setString('username', _user.text.trim());
-        await p.setString('home_host', _home.text.trim());
-      } catch (_) {}
+      await widget.api.login(url, user, _pass.text, remember: _remember);
+      await widget.store.saveLogin(
+        url: widget.api.base,
+        username: user,
+        token: _remember ? widget.api.token : null,
+      );
       if (!mounted) return;
       widget.onLoggedIn();
     } catch (e) {
@@ -92,89 +79,115 @@ class _LoginPageState extends State<LoginPage> {
   Widget build(BuildContext context) {
     final message = _error ?? widget.notice;
     return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Icon(Icons.dns_rounded, size: 56),
-                  const SizedBox(height: 8),
-                  Text(
-                    'ServerDeck',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.headlineLarge,
-                  ),
-                  const SizedBox(height: 4),
-                  const Text('Manage your Ubuntu server', textAlign: TextAlign.center),
-                  const SizedBox(height: 24),
-                  TextField(
-                    controller: _url,
-                    keyboardType: TextInputType.url,
-                    autocorrect: false,
-                    decoration: const InputDecoration(
-                      labelText: 'Server address',
-                      hintText: 'https://deck.yourdomain.com',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _user,
-                    autocorrect: false,
-                    decoration: const InputDecoration(
-                      labelText: 'Username',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _pass,
-                    obscureText: _hidePass,
-                    onSubmitted: (_) => _login(),
-                    decoration: InputDecoration(
-                      labelText: 'Password',
-                      border: const OutlineInputBorder(),
-                      suffixIcon: IconButton(
-                        icon: Icon(_hidePass ? Icons.visibility : Icons.visibility_off),
-                        onPressed: () => setState(() => _hidePass = !_hidePass),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF0A101C), Color(0xFF10263A), Color(0xFF0A101C)],
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 84,
+                        height: 84,
+                        decoration: BoxDecoration(
+                          gradient: accentGradient,
+                          borderRadius: BorderRadius.circular(26),
+                        ),
+                        child: const Icon(Icons.dns_rounded, size: 44, color: AppColors.onAccent),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _home,
-                    keyboardType: TextInputType.url,
-                    autocorrect: false,
-                    decoration: const InputDecoration(
-                      labelText: 'Home address for Open buttons (optional)',
-                      hintText: '192.168.1.20',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: _loading ? null : _login,
-                    child: _loading
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Log in'),
-                  ),
-                  if (message != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      message,
+                    const SizedBox(height: 18),
+                    const Text(
+                      'ServerDeck',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.red.shade300),
+                      style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800),
                     ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Manage your Ubuntu server',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppColors.muted),
+                    ),
+                    const SizedBox(height: 28),
+                    TextField(
+                      controller: _url,
+                      keyboardType: TextInputType.url,
+                      autocorrect: false,
+                      decoration: fieldDecoration(
+                        'Server address',
+                        hint: 'https://deck.yourdomain.com',
+                        icon: Icons.link_rounded,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _user,
+                      autocorrect: false,
+                      decoration: fieldDecoration('Username', icon: Icons.person_rounded),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _pass,
+                      obscureText: _hidePass,
+                      onSubmitted: (_) => _login(),
+                      decoration: fieldDecoration(
+                        'Password',
+                        icon: Icons.lock_rounded,
+                        suffix: IconButton(
+                          icon: Icon(_hidePass
+                              ? Icons.visibility_rounded
+                              : Icons.visibility_off_rounded),
+                          onPressed: () => setState(() => _hidePass = !_hidePass),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    SwitchListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                      title: const Text('Remember me'),
+                      subtitle: const Text(
+                        'Stay logged in on this phone',
+                        style: TextStyle(color: AppColors.muted, fontSize: 12),
+                      ),
+                      value: _remember,
+                      onChanged: (v) => setState(() => _remember = v),
+                    ),
+                    const SizedBox(height: 10),
+                    FilledButton(
+                      onPressed: _loading ? null : _login,
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(54),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                      child: _loading
+                          ? const SizedBox(
+                              height: 22,
+                              width: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2.5),
+                            )
+                          : const Text('Log in', style: TextStyle(fontSize: 16)),
+                    ),
+                    if (message != null) ...[
+                      const SizedBox(height: 14),
+                      Text(
+                        message,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: AppColors.bad),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),

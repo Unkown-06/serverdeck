@@ -2,4 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app.dart';
 
-void main() => runApp(const ServerDeckApp());
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const ServerDeckApp());
+}
